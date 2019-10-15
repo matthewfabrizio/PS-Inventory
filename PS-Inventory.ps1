@@ -9,29 +9,35 @@ Fetch computer information and output to respective JSON file.
 Prints help information.
 
 .EXAMPLE
-./Inventory.ps1 -Help
+./PS-Inventory.ps1 -Help
 
 .NOTES
 ===========================================================================
-    Created on:   	9/18/2019
-    Updated on:     ***
+    Created on:   	2019-09-18
+    Updated on:     2019-10-15
 	Author:    	    Matthew Fabrizio
 	Organization: 	*** 
-	Filename:     	Get-Inventory.ps1
+    Filename:     	PS-Inventory.ps1
+    Version:        1.0.1
 ===========================================================================
 #>
 
+# Requires -Module ActiveDirectory
+
 # Prints help information.
-param(
-    [Parameter(Mandatory=$false,
-           Position=0,
-           HelpMessage="Prints help information.")]
+[CmdletBinding()]
+param (
+    [Parameter()]
     [switch]
     $Help
 )
 
 function Get-Help() {
+    Clear-Host
+
     "
+    Welcome to PS-Inventory!
+
     AD Query Scan:
         The AD Query menu option allows a user to scan any number of devices starting with a certain string of text.
         For instance, say you want to scan all computers starting with a specific name of 'LAB-' and there are 20 computers ranging from LAB-01 to LAB-20
@@ -55,15 +61,15 @@ function Get-Help() {
 
 function Write-LogEntry {
     param(
-        [parameter(Mandatory=$true, HelpMessage="Value of log entry to be added.")]
+        [parameter(Mandatory, HelpMessage="Value of log entry to be added.")]
         [ValidateNotNullOrEmpty()]
         [string] $Value,
 
-        [parameter(Mandatory=$false, HelpMessage="Name of the log file.")]
+        [parameter(HelpMessage="Name of the log file.")]
         [ValidateNotNullOrEmpty()]
         [string] $FileName = "error.log",
 
-        [Parameter(Mandatory=$false, HelpMessage="Prevents logging to STDOUT")]
+        [Parameter(HelpMessage="Prevents logging to STDOUT")]
         [switch] $OutNull
     )
     
@@ -85,21 +91,21 @@ function Write-LogEntry {
     }
 }
 
-function Get-Menu {
+function Show-Menu {
     Clear-Host
 
-    Write-Host "`n----------- MENU -----------"
-    Write-Host "[A] : AD Query Scan"
-    Write-Host "[L] : Loop Scan"
-    Write-Host "[S] : Single Scan"
-    Write-Host "[Q] : Quit"
-    Write-Host "----------------------------`n"
+    "`n----------- MENU -----------"
+    "[A] : AD Query Scan"
+    "[L] : Loop Scan"
+    "[S] : Single Scan"
+    "[Q] : Quit"
+    "----------------------------`n"
 }
 
 function Get-DeviceInfo() {
     param (
         # Computer(s) to be scanned
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory)]
         [string[]]
         $ComputerName
     )
@@ -112,6 +118,7 @@ function Get-DeviceInfo() {
 
     foreach ($Computer in $ComputerName.ToUpper()) {
         Write-Progress "Pinging $Computer"
+
         if (Test-Connection -ComputerName $Computer -Count 1 -Quiet) {
             Write-Host "Connection to [$Computer] successful." -ForegroundColor Green
             [Void]$Online.Add($Computer)
@@ -126,8 +133,7 @@ function Get-DeviceInfo() {
             $Win32_ComputerSystem  = (Get-WmiObject -ComputerName $Computer -Class Win32_ComputerSystem -ErrorAction Stop)
             $Win32_Bios            = (Get-WmiObject -ComputerName $Computer -Class Win32_Bios -ErrorAction Stop)
             $Win32_PhysicalMemory  = (Get-WmiObject -ComputerName $Computer -Class Win32_PhysicalMemory -ErrorAction Stop)
-            # $Win32_NetworkAdapterConfiguration = (Get-WmiObject -ComputerName $Computer -Class Win32_NetworkAdapterConfiguration -ErrorAction Stop)
-            $Win32_NetworkAdapter = (Get-WmiObject -ComputerName $Computer -Class Win32_NetworkAdapter | Where-Object { $_.Description -notmatch 'wan miniport|microsoft isatap adapter|bluetooth|juniper|ras async adapter|virtual|apple|miniport|tunnel|debug|advanced-n|wireless-n|ndis' } -ErrorAction Stop)
+            $Win32_NetworkAdapter  = (Get-WmiObject -ComputerName $Computer -Class Win32_NetworkAdapter | Where-Object { $_.Description -notmatch 'wan miniport|microsoft isatap adapter|bluetooth|juniper|ras async adapter|virtual|apple|miniport|tunnel|debug|advanced-n|wireless-n|ndis' } -ErrorAction Stop)
             
             # Manufacturer / Physical
             $Manufacturer = $Win32_ComputerSystem.Manufacturer
@@ -150,11 +156,6 @@ function Get-DeviceInfo() {
             $Domain       = $Win32_ComputerSystem.Domain
             $EthMAC       = ($Win32_NetworkAdapter | Where-Object {$_.NetConnectionID -like '*Ethernet*'}).MACAddress
             $WlpMAC       = ($Win32_NetworkAdapter | Where-Object {$_.NetConnectionID -like '*Wi-Fi*'}).MACAddress
-
-            <# AD Queries #>
-            # $Hostname = Get-ADComputer $Computer -Properties CN | Select-Object -ExpandProperty CN
-            # $OS = Get-ADComputer $Computer -Properties OperatingSystem | Select-Object -ExpandProperty OperatingSystem
-            # $IP = Get-ADComputer $Computer -Properties IPv4Address | Select-Object -ExpandProperty IPv4Address
 
             switch($OS){
                 '10.0.10240' {$OS="1507"}
@@ -231,7 +232,7 @@ function Get-DeviceInfo() {
 
             Write-LogEntry "[ERROR] : Device [$Computer]
             $ExceptionMessage
-            Exception caugh on line $ExceptionLineNumber
+            Exception caught on line $ExceptionLineNumber
             $ExceptionLineContent"
         }
     }
@@ -254,8 +255,7 @@ if (!(Test-Path -Path $PSScriptRoot\Hosts)) {
 }
 
 do {
-    <# Print the menu; Select the choice #>
-    Get-Menu
+    Show-Menu
     $Choice = Read-Host "Make a selection"
 
     switch ($Choice) {
@@ -269,18 +269,24 @@ do {
         <# [l|L] Prompt for a computer to scan; exit on SIGINT #>
         <# [s|S] Prompt for a computer to scan; exit once complete #>
         { @('l','s') -contains $PSItem } {
-            $hostnameExists = $false
-            while (!$hostnameExists) {
+            $HostnameExists = $false
+
+            while (!$HostnameExists) {
                 Write-Host "`nType 'stop|Stop|Ctrl+c' to exit.`n" -ForegroundColor Yellow
+
+                # Get device from user; quit on stop
                 $Computers = Read-Host "What computer would you like to scan?"
                 if ($Computers -contains 'stop') { exit }
+
+                # Combine all computers together
                 $Computers = $Computers.Split(",").Trim(" ")
                 Get-DeviceInfo -ComputerName $Computers
-                if ($PSItem -eq 's') { $hostnameExists=$true }
+
+                # If user selected single scan, auto set to $true
+                if ($PSItem -eq 's') { $HostnameExists=$true }
             }
         }
-        <# Log user quit prompt; Clear the screen; Exit the application #>
         'q' { Clear-Host; exit }
-        default { Write-Host "Invalid menu choice" -ForegroundColor Red }  
+        default { Write-Warning -Message "Invalid menu choice" }  
     }
 } while ($Choice -eq 'q')
