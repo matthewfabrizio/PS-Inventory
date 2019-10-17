@@ -134,7 +134,8 @@ function Get-DeviceInfo() {
             $Win32_Bios            = (Get-WmiObject -ComputerName $Computer -Class Win32_Bios -ErrorAction Stop)
             $Win32_PhysicalMemory  = (Get-WmiObject -ComputerName $Computer -Class Win32_PhysicalMemory -ErrorAction Stop)
             $Win32_NetworkAdapter  = (Get-WmiObject -ComputerName $Computer -Class Win32_NetworkAdapter | Where-Object { $_.Description -notmatch 'wan miniport|microsoft isatap adapter|bluetooth|juniper|ras async adapter|virtual|apple|miniport|tunnel|debug|advanced-n|wireless-n|ndis' } -ErrorAction Stop)
-            
+            $AV = (Get-WmiObject -ComputerName $Computer -Namespace "root\SecurityCenter2" -Query "SELECT * FROM AntiVirusProduct").displayName
+
             # Manufacturer / Physical
             $Manufacturer = $Win32_ComputerSystem.Manufacturer
             $Model        = $Win32_ComputerSystem.Model

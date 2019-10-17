@@ -1,5 +1,4 @@
-$Hosts = (Get-ChildItem -Path "$PSScriptRoot\Hosts").FullName
-
+$Hosts   = (Get-ChildItem -Path "$PSScriptRoot\Hosts").FullName
 $Content = Get-Content -Path $Hosts -Raw | ConvertFrom-Json
 
 $Collection = [System.Collections.Generic.List[psobject]]::new()
@@ -22,28 +21,33 @@ foreach ($Item in $Content) {
     })
 }
 
-# god I hate this so much. I'll fix it later
-$Build1507 = 0
-$Build1511 = 0
-$Build1607 = 0
-$Build1703 = 0
-$Build1709 = 0
-$Build1803 = 0
-$Build1809 = 0
-$Build1903 = 0
-foreach ($Build in $Collection.'Windows Build') {
-    switch ($Build) {
-        '1507' { $Build1507++ }
-        '1511' { $Build1511++ }
-        '1607' { $Build1607++ }
-        '1703' { $Build1703++ }
-        '1709' { $Build1709++ }
-        '1803' { $Build1803++ }
-        '1809' { $Build1809++ }
-        '1903' { $Build1903++ }
-        Default {}
+# Hastable enumertaion source : https://mjolinor.wordpress.com/2012/01/29/powershell-hash-tables-as-accumulators/
+
+#region OS Build Version Count
+
+$WindowsBuildCount = [ordered]@{}
+
+$Collection | ForEach-Object {
+    if ($PSItem.'Windows Build' -eq '6.3.9600') {
+        $WindowsBuildCount['Windows 8.1 Pro']++
+    }
+    elseif ($PSItem.'Windows Build' -eq '6.1.7601') {
+        $WindowsBuildCount['Windows 7 Professional']++
+    }
+    else {
+        $WindowsBuildCount[$PSItem.'Windows Build']++  
     }
 }
+
+#endregion
+
+# $AntivirusCount = @{}
+
+# $Collection | ForEach-Object {
+#     if ($AV -eq $true) {
+#         $AntivirusCount[$PSItem.Symantec]++
+#     }
+# }
 
 $SymantecCount = 0
 $OtherCount = 0
@@ -56,20 +60,15 @@ foreach ($AV in $Collection.Symantec) {
     }
 }
 
-$Windows7Count = 0
-$Windows8Count = 0
-$Windows10Count = 0
-foreach ($OS in $Collection.'Windows Edition') {
-    if ($OS -match 'Windows 7') {
-        $Windows7Count++
-    }
-    elseif ($OS -match "Windows 8") {
-        $Windows8Count++
-    }
-    elseif ($OS -match "Windows 10") {
-        $Windows10Count++
-    }
+#region OS Edition Count
+
+$WindowsEditionCount = @{}
+
+$Collection | ForEach-Object {
+    $WindowsEditionCount[$PSItem.'Windows Edition']++  
 }
+
+#endregion
 
 New-HTML -Name "Inventory Report" -FilePath "$PSScriptRoot\Report.html" -ShowHTML {
     New-HTMLTab -Name "Reports" {
@@ -86,42 +85,21 @@ New-HTML -Name "Inventory Report" -FilePath "$PSScriptRoot\Report.html" -ShowHTM
         New-HTMLChart -Title "Windows Edition Report" {
             New-ChartBarOptions -Vertical
             New-ChartLegend -Names "Windows Edition"
-            New-ChartBar -Name "Windows 7 Professional" -Value $Windows7Count
-            New-ChartBar -Name "Windows 8" -Value $Windows8Count
-            New-ChartBar -Name "Windows 10" -Value $Windows10Count
+            foreach ($Edition in $WindowsEditionCount.GetEnumerator()) {
+                New-ChartBar -Name $Edition.Name -Value $Edition.Value
+            }
         }
         New-HTMLSection -Invisible {
             New-HTMLPanel -Invisible {
                 New-HTMLChart -Title "Windows Build Report" {
                     New-ChartBarOptions -Vertical
                     New-ChartLegend -Names "Windows Build" 
-                    New-ChartBar -Name "1507" -Value $Build1507
-                    New-ChartBar -Name "1511" -Value $Build1511
-                    New-ChartBar -Name "1607" -Value $Build1607
-                    New-ChartBar -Name "1703" -Value $Build1703
-                    New-ChartBar -Name "1709" -Value $Build1709
-                    New-ChartBar -Name "1803" -Value $Build1803
-                    New-ChartBar -Name "1809" -Value $Build1809
-                    New-ChartBar -Name "1903" -Value $Build1903
+                    foreach ($Build in $WindowsBuildCount.GetEnumerator()) {
+                        New-ChartBar -Name $Build.Name -Value $Build.Value
+                    }
                 }
             }
-            New-HTMLPanel -Invisible {
-                New-HTMLChart -Title "Windows Build Report" {
-                    New-ChartBarOptions -Vertical
-                    New-ChartLegend -Names "Windows Build" 
-                    New-ChartPie -Name "1507" -Value $Build1507
-                    New-ChartPie -Name "1511" -Value $Build1511
-                    New-ChartPie -Name "1607" -Value $Build1607
-                    New-ChartPie -Name "1703" -Value $Build1703
-                    New-ChartPie -Name "1709" -Value $Build1709
-                    New-ChartPie -Name "1803" -Value $Build1803
-                    New-ChartPie -Name "1809" -Value $Build1809
-                    New-ChartPie -Name "1903" -Value $Build1903
-                }
-            }
-        }
-        
-        
+        } 
     }
     
     New-HTMLTab -Name "Devices" {
