@@ -1,24 +1,26 @@
-<# Configuration Variables for conditional formatting
-MinimumOSBuild will highlight all table rows orange to note they need upgrading
-MaximumAge defines the max age to highlight in red. Ex. You have a policy to recycle all devices >6 years
-UnsupportedOS defines a OS that you need to upgrade to current (i.e. Windows 7 EOL in 2020)
-Color values represent colors for charts on the Reports page.
-#>
-$MinimumOSBuild = 1803
-$MaximumAge = 5.9
-$UnsupportedOS = 'Microsoft Windows 7 Professional'
-$Domain = 'YOURDOMAIN.org'
+<# USER CONFIGURATION VARIABLES #>
+$MinimumOSBuild = 1803 # Lowest build before conditional formatting is applied
+$MaximumAge     = 5.9  # Maximum age before conditional formatting is applied
+$UnsupportedOS  = 'Microsoft Windows 7 Professional' # Problem OS to conditionally format
+
+# Domain applies to $DomainWarning, also possible to use (Get-ADDomain).Forest
+$Domain         = 'YOURDOMAIN.org'
 
 # If you don't want any warnings on the Devices tab, set values to $false
 $MinimumOSBuildWarning  = $true  # Will warn if any devices are running builds lower than $MinimumOSBuild (above)
 $UnsupportedOSWarning   = $true  # Will warn if any devices are running $UnsupportedOS (above)
 $DomainWarning          = $false # Will warn if any devices are on a WORKGROUP
 
+# Colors for Reports tab
 $TotalDevicesColor = 'Green'
 $AntivirusReportColor = 'Orange'
 $WindowsEditionReportColor = 'Blue'
 $WindowsBuildReportColor = 'Red'
 ############################################################################################################
+
+# PSWriteHTML Module sources:
+# https://evotec.xyz/easy-way-to-create-diagrams-using-powershell-and-pswritehtml/
+# https://github.com/EvotecIT/PSWriteHTML
 
 $Hosts   = (Get-ChildItem -Path "$PSScriptRoot\Hosts").FullName
 $Content = Get-Content -Path $Hosts -Raw | ConvertFrom-Json
@@ -45,25 +47,23 @@ foreach ($Item in $Content) {
 
 # Hastable enumertaion source : https://mjolinor.wordpress.com/2012/01/29/powershell-hash-tables-as-accumulators/
 
-# FIX: probably can update all these loops into one $Collection iteration
+#region Counters
+# These counters will break on legacy versions of PS-Inventory
+# If you make core changes to what PS-Inventory outputs, then godspeed
+$SerialCount            = [ordered]@{}
+$DomainCount            = [ordered]@{}
+$WindowsBuildCount      = [ordered]@{}
+$AntivirusCount         = [ordered]@{}
+$WindowsEditionCount    = [ordered]@{}
+$DeviceTypeCount        = [ordered]@{}
 
-#region Serial Number count
-$SerialCount = [ordered]@{}
 $Collection | ForEach-Object {
     $SerialCount[$PSItem.'Serial Number']++
-}
-#endregion
-
-#region Domain count
-$DomainCount = [ordered]@{}
-$Collection | ForEach-Object {
     $DomainCount[$PSItem.Domain]++
-}
-#endregion
+    $AntivirusCount[$PSItem.Antivirus]++
+    $WindowsEditionCount[$PSItem.'Windows Edition']++
+    $DeviceTypeCount[$PSItem.Type]++
 
-#region OS Build Version Count
-$WindowsBuildCount = [ordered]@{}
-$Collection | ForEach-Object {
     if ($PSItem.'Windows Build' -eq '6.3.9600') {
         $WindowsBuildCount['Windows 8.1 Pro']++
     }
@@ -74,30 +74,6 @@ $Collection | ForEach-Object {
         $WindowsBuildCount[$PSItem.'Windows Build']++  
     }
 }
-#endregion
-
-# region Antivirus Count
-$AntivirusCount = @{}
-$Collection | ForEach-Object {
-    if ($PSItem.Antivirus -ne $null) {
-        $AntivirusCount[$PSItem.Antivirus]++
-    }
-}
-#endregion
-
-#region OS Edition Count
-$WindowsEditionCount = @{}
-$Collection | ForEach-Object {
-    $WindowsEditionCount[$PSItem.'Windows Edition']++  
-}
-#endregion
-
-#region Device Type Count
-$DeviceTypeCount = @{}
-$Collection | ForEach-Object {
-    $DeviceTypeCount[$PSItem.Type]++
-}
-#endregion
 
 New-HTML -Name "Inventory Report" -FilePath "$PSScriptRoot\Report.html" -ShowHTML {
     New-HTMLTab -Name "Reports" {
