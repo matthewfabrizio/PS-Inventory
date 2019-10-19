@@ -14,12 +14,13 @@ Prints help information.
 .NOTES
 ===========================================================================
     Created on:   	2019-09-18
-    Updated on:     2019-10-15
 	Author:    	    Matthew Fabrizio
 	Organization: 	*** 
     Filename:     	PS-Inventory.ps1
-    Version:        1.0.1
 ===========================================================================
+
+.LINK
+https://github.com/matthewfabrizio
 #>
 
 # Requires -Module ActiveDirectory

@@ -10,15 +10,15 @@ $UnsupportedOS = 'Microsoft Windows 7 Professional'
 $Domain = 'YOURDOMAIN.org'
 
 # If you don't want any warnings on the Devices tab, set values to $false
-$MinimumOSBuildWarning = $true
-$UnsupportedOSWarning  = $true
-$DomainWarning = $false
+$MinimumOSBuildWarning  = $true  # Will warn if any devices are running builds lower than $MinimumOSBuild (above)
+$UnsupportedOSWarning   = $true  # Will warn if any devices are running $UnsupportedOS (above)
+$DomainWarning          = $false # Will warn if any devices are on a WORKGROUP
 
 $TotalDevicesColor = 'Green'
 $AntivirusReportColor = 'Orange'
 $WindowsEditionReportColor = 'Blue'
 $WindowsBuildReportColor = 'Red'
-###
+############################################################################################################
 
 $Hosts   = (Get-ChildItem -Path "$PSScriptRoot\Hosts").FullName
 $Content = Get-Content -Path $Hosts -Raw | ConvertFrom-Json
@@ -82,9 +82,6 @@ $Collection | ForEach-Object {
     if ($PSItem.Antivirus -ne $null) {
         $AntivirusCount[$PSItem.Antivirus]++
     }
-    # else {
-    #     $AntivirusCount['Windows Defender/Other']++
-    # }
 }
 #endregion
 
