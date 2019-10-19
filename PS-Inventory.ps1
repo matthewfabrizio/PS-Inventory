@@ -54,38 +54,6 @@ function Get-Help() {
     "
 }
 
-function Write-LogEntry {
-    param(
-        [parameter(Mandatory, HelpMessage="Value of log entry to be added.")]
-        [ValidateNotNullOrEmpty()]
-        [string] $Value,
-
-        [parameter(HelpMessage="Name of the log file.")]
-        [ValidateNotNullOrEmpty()]
-        [string] $FileName = "error.log",
-
-        [Parameter(HelpMessage="Prevents logging to STDOUT")]
-        [switch] $OutNull
-    )
-    
-    <# If no Log directory exists, create it #>
-    if (!(Test-Path "$PSScriptRoot\Log" -PathType Container)) {
-        New-Item -Path "$PSScriptRoot" -Name "Log" -ItemType Directory | Out-Null
-    }
-
-    <# Determine log file location #>
-    $LogFilePath = Join-Path -Path "$PSScriptRoot" -ChildPath "Log\$($FileName)"
-
-    <# Add value to log file #>
-    try {
-        if (!$OutNull) { Write-Host $Value }
-        Out-File -InputObject "[$(Get-Date -Format g)] => $Value" -Append -NoClobber -Encoding Default -FilePath $LogFilePath -ErrorAction Stop
-    }
-    catch [System.Exception] {
-        Write-Warning -Message "Unable to append log entry to $FileName file"
-    }
-}
-
 function Show-Menu {
     Clear-Host
 
@@ -118,7 +86,7 @@ function Get-DeviceInfo() {
             Write-Host "Connection to [$Computer] successful." -ForegroundColor Green
             [Void]$Online.Add($Computer)
         }
-        else { Write-LogEntry "$Computer unavailable." }
+        else { Write-Warning -Message "$Computer unavailable." }
     }
 
     foreach ($Computer in $Online) {
@@ -249,7 +217,7 @@ function Get-DeviceInfo() {
             $ExceptionLineContent = (Get-Content (Split-Path $MyInvocation.ScriptName -Leaf) -TotalCount $ExceptionLineNumber)[-1]
             $ExceptionMessage     = $PSItem.Exception.Message
 
-            Write-LogEntry "[ERROR] : Device [$Computer]
+            Write-Warning -Message "[ERROR] : Device [$Computer]
             $ExceptionMessage
             Exception caught on line $ExceptionLineNumber
             $ExceptionLineContent"
