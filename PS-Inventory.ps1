@@ -25,12 +25,7 @@ Prints help information.
 # Requires -Module ActiveDirectory
 
 # Prints help information.
-[CmdletBinding()]
-param (
-    [Parameter()]
-    [switch]
-    $Help
-)
+[CmdletBinding()] param ( [Parameter()] [switch] $Help )
 
 function Get-Help() {
     Clear-Host
@@ -135,6 +130,7 @@ function Get-DeviceInfo() {
             $Win32_PhysicalMemory  = (Get-WmiObject -ComputerName $Computer -Class Win32_PhysicalMemory -ErrorAction Stop)
             $Win32_NetworkAdapter  = (Get-WmiObject -ComputerName $Computer -Class Win32_NetworkAdapter | Where-Object { $_.Description -notmatch 'wan miniport|microsoft isatap adapter|bluetooth|juniper|ras async adapter|virtual|apple|miniport|tunnel|debug|advanced-n|wireless-n|ndis' } -ErrorAction Stop)
             $AV = (Get-WmiObject -ComputerName $Computer -Namespace "root\SecurityCenter2" -Query "SELECT * FROM AntiVirusProduct").displayName
+            $Win32_SystemEnclosure = (Get-WmiObject -ClassName Win32_SystemEnclosure -Namespace 'root\CIMV2' -Property ChassisTypes).ChassisTypes
 
             # Manufacturer / Physical
             $Manufacturer = $Win32_ComputerSystem.Manufacturer
@@ -173,9 +169,19 @@ function Get-DeviceInfo() {
             $Manufacturer = [string]$Manufacturer.replace("Inc.","")
             $Make = $Manufacturer + $Model
 
-            # Mainly for Dell devices, can add more desktop options if necessary
-            if ($Model -like '*Optiplex*') { $Type = "Desktop" } 
-            else { $Type = "Laptop" }
+            # Chassis type source values : https://docs.microsoft.com/en-us/windows/win32/cimwin32prov/win32-systemenclosure
+            switch ($Win32_SystemEnclosure) {
+                { @(3..7)  -contains $PSItem } { $Type = "Desktop" }
+                { @(8..16) -contains $PSItem } { $Type = "Laptop" }
+                Default { "Unknown" }
+            }
+
+            if ($AV.Count -gt 1) {
+                $AntivirusProduct = $AV | Where-Object -NotLike 'Windows Defender'
+            }
+            else {
+                $AntivirusProduct = $AV
+            }
 
             # Calculate age and reimage date
             $Age = (New-TimeSpan -Start ($Age.ConvertToDateTime($Age.ReleaseDate).ToShortDateString()) -End $(Get-Date)).Days / 365
@@ -190,18 +196,19 @@ function Get-DeviceInfo() {
 
             # Big ol object dump
             $Properties = [PSCustomObject]@{
-                Hostname    = $Hostname
-                Device      = $Make
-                Type        = $Type
-                Serial      = $Serial
-                Edition     = $Edition
-                OS          = $OS
-                Memory      = $Memory
-                Domain      = $Domain
-                DecimalAge  = $Age
-                Age         = $CalculatedAge
-                Reimaged    = $ReimageDate
-                ExcelAge    = $ExcelAge
+                AntiVirusProduct = $AntivirusProduct
+                Hostname         = $Hostname
+                Device           = $Make
+                Type             = $Type
+                Serial           = $Serial
+                Edition          = $Edition
+                OS               = $OS
+                Memory           = $Memory
+                Domain           = $Domain
+                DecimalAge       = $Age
+                Age              = $CalculatedAge
+                Reimaged         = $ReimageDate
+                ExcelAge         = $ExcelAge
             }
 
             # Add MAC if exists to object
@@ -212,7 +219,18 @@ function Get-DeviceInfo() {
             [Void]$DeviceArray.Add($Properties)
 
             # Output computer data to JSON in Hosts directory
-            $Properties | ConvertTo-Json | Out-File $PSScriptRoot\Hosts\$Computer.json
+            $Hosts   = (Get-ChildItem -Path "$PSScriptRoot\Hosts").FullName
+            $HostsCheck = Get-Content -Path $Hosts -Raw | ConvertFrom-Json
+
+            foreach ($Item in $HostsCheck) {
+                # "$($Item.Hostname) : $($Item.Serial)"
+                if ($Properties.Serial -eq $Item.Serial) {
+                    Write-Verbose -Message "Removing duplicate entry"
+                    Remove-Item -Path "$PSScriptRoot\Hosts\$($Item.Hostname).json"
+                }
+            }
+
+            $Properties | ConvertTo-Json | Out-File "$PSScriptRoot\Hosts\$Computer.json"
 
             <# Prep specific properties for Excel pasting; tab delimited #>
             ($Properties | Select-Object * | ForEach-Object {
@@ -239,7 +257,7 @@ function Get-DeviceInfo() {
     }
     
     <# Spicy STDOUT #>
-    $DeviceArray
+    $DeviceArray | Format-Table -AutoSize
 }
 
 # If help, help please
