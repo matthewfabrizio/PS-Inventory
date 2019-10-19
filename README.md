@@ -7,16 +7,26 @@
 </div>
 
 ## About
-Fetch computer information and output to respective JSON file.
+Fetch computer information and output to respective JSON file. Afterwards, build a reporting dashboard with PSWriteHTML.
 
 ## Getting Started
 Since this is a small script, a simple `git clone` will get you a copy of the script up and running on your local machine for development and testing purposes.
 
-This script relies on the ActiveDirectory
-[module](https://docs.microsoft.com/en-us/powershell/module/addsadministration/?view=win10-ps).
+This script relies on the
+[ActiveDirectory](https://docs.microsoft.com/en-us/powershell/module/addsadministration/?view=win10-ps).
+and
+[PSWriteHTML](https://github.com/EvotecIT/PSWriteHTML)
+modules.
 
 ```ps
 Import-Module ActiveDirectory
+Import-Module PSWriteHTML
+```
+
+It is also advantageous to install the RSAT tools for Active Directory.
+
+```ps
+Get-WindowsCapability -Name RSAT* -Online | Add-WindowsCapability -Online
 ```
 
 ## Usage
@@ -25,7 +35,7 @@ Import-Module ActiveDirectory
 The `Help` parameter will get you started on how the script behaves.
 
 ```ps
-.\Get-ACDCPowerCfg.ps1 -Help
+.\PS-Inventory.ps1 -Help
 ```
 
 ## Future Implementations
@@ -37,5 +47,3 @@ The `Help` parameter will get you started on how the script behaves.
 |   |
 |---|
 | [Parameters](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_functions_advanced_parameters?view=powershell-6) |
-| [Get-CimClass](https://docs.microsoft.com/en-us/powershell/module/cimcmdlets/get-cimclass?view=powershell-6) |
-| [Get-ADComputer](https://docs.microsoft.com/en-us/powershell/module/addsadministration/get-adcomputer?view=win10-ps) |
