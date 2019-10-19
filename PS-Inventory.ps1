@@ -187,17 +187,18 @@ function Get-DeviceInfo() {
             # Store computer info in DeviceArray, append additional devices
             [Void]$DeviceArray.Add($Properties)
 
-            # Output computer data to JSON in Hosts directory
             $Hosts   = (Get-ChildItem -Path "$PSScriptRoot\Hosts").FullName
-            $HostsCheck = Get-Content -Path $Hosts -Raw | ConvertFrom-Json
+            if ($Hosts.Count -gt 0) {
+                $HostsCheck = Get-Content -Path $Hosts -Raw | ConvertFrom-Json
 
-            foreach ($Item in $HostsCheck) {
-                # "$($Item.Hostname) : $($Item.Serial)"
-                if ($Properties.Serial -eq $Item.Serial) {
-                    Write-Verbose -Message "Removing duplicate entry"
-                    Remove-Item -Path "$PSScriptRoot\Hosts\$($Item.Hostname).json"
+                foreach ($Item in $HostsCheck) {
+                    if ($Properties.Serial -eq $Item.Serial) {
+                        Write-Verbose -Message "Removing duplicate entry"
+                        Remove-Item -Path "$PSScriptRoot\Hosts\$($Item.Hostname).json"
+                    }
                 }
             }
+            
 
             $Properties | ConvertTo-Json | Out-File "$PSScriptRoot\Hosts\$Computer.json"
 
