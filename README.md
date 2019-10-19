@@ -1,4 +1,4 @@
-<h3 align="center">Get-Inventory</h3>
+<h3 align="center">PS-Inventory</h3>
 
 <div align="center">
 
