@@ -26,7 +26,18 @@ https://github.com/matthewfabrizio
 # Requires -Module ActiveDirectory
 
 # Prints help information.
-[CmdletBinding()] param ( [Parameter()] [switch] $Help )
+[CmdletBinding()] param (
+    [Parameter()]
+    [switch]
+    $Help,
+    # Hosts storage
+    [Alias('Path')]
+    [ValidateScript({if ($PSItem){ Test-Path $PSItem}})]
+    [string]
+    $FilePath = "$PSScriptRoot"
+)
+
+# UNC paths are meh right now
 
 function Get-Help() {
     Clear-Host
@@ -56,7 +67,7 @@ function Get-Help() {
 }
 
 function Show-Menu {
-    Clear-Host
+    # Clear-Host
 
     "`n----------- MENU -----------"
     "[A] : AD Query Scan"
@@ -184,23 +195,32 @@ function Get-DeviceInfo() {
             if ($EthMAC) { $Properties | Add-Member -NotePropertyName EthMAC -NotePropertyValue $EthMAC }
             if ($WlpMAC) { $Properties | Add-Member -NotePropertyName WlpMAC -NotePropertyValue $WlpMAC }
 
+            # Append custom non-discoverable settings to end
+            $CustomSettings = @{
+                'Asset Tag'      = ""
+                'Bios Password'  = ""
+                'Boot Sequence'  = ""
+            }
+            $Properties | Add-Member -NotePropertyName Custom -NotePropertyValue $CustomSettings
+
             # Store computer info in DeviceArray, append additional devices
             [Void]$DeviceArray.Add($Properties)
 
-            $Hosts   = (Get-ChildItem -Path "$PSScriptRoot\Hosts").FullName
+            $Hosts   = (Get-ChildItem -Path "$FilePath").FullName
+            Write-Verbose -Message "Variable [Hosts] set to $Hosts"
             if ($Hosts.Count -gt 0) {
                 $HostsCheck = Get-Content -Path $Hosts -Raw | ConvertFrom-Json
+                Write-Verbose -Message "Variable [HostsCheck] set to $HostsCheck"
 
                 foreach ($Item in $HostsCheck) {
                     if ($Properties.Serial -eq $Item.Serial) {
                         Write-Verbose -Message "Removing duplicate entry"
-                        Remove-Item -Path "$PSScriptRoot\Hosts\$($Item.Hostname).json"
+                        Remove-Item -Path "$FilePath\$($Item.Hostname).json"
                     }
                 }
             }
             
-
-            $Properties | ConvertTo-Json | Out-File "$PSScriptRoot\Hosts\$Computer.json"
+            $Properties | ConvertTo-Json | Out-File "$FilePath\$Computer.json"
 
             <# Prep specific properties for Excel pasting; tab delimited #>
             ($Properties | Select-Object * | ForEach-Object {
@@ -233,19 +253,18 @@ function Get-DeviceInfo() {
 # If help, help please
 if ($Help) { Get-Help; exit }
 
-<# Remove Log directory if it exists; generate on error #>
-if (Test-Path -Path "$PSScriptRoot\Log") {
-    Remove-Item -Path "$PSScriptRoot\Log" -Recurse
+<# If there is no Hosts directory to store JSON, create it #>
+$FilePath = $FilePath + "\Hosts"
+
+if (!(Test-Path -Path "$FilePath")) {
+    New-Item -Path "$FilePath" -Name "Hosts" -ItemType Container > $null
 }
 
-<# If there is no Hosts directory to store JSON, create it #>
-if (!(Test-Path -Path $PSScriptRoot\Hosts)) {
-    New-Item -Path $PSScriptRoot -Name "Hosts" -ItemType Container > $null
-}
 
 do {
     Show-Menu
     $Choice = Read-Host "Make a selection"
+    Write-Verbose -Message "Variable [FilePath] set to $FilePath"
 
     switch ($Choice) {
         <# Prompt for AD search terms - only starting characters #>
