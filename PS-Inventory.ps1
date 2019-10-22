@@ -146,7 +146,7 @@ function Get-DeviceInfo() {
             }
 
             if ($AV.Count -gt 1) {
-                $AntivirusProduct = $AV | Where-Object -NotLike 'Windows Defender'
+                $AntivirusProduct = $AV | Where-Object -FilterScript {$PSItem -ne 'Windows Defender'}
             }
             else {
                 $AntivirusProduct = $AV
