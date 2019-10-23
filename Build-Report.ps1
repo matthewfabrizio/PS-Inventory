@@ -29,6 +29,7 @@ $Collection = [System.Collections.Generic.List[psobject]]::new()
 
 foreach ($Item in $Content) {
     $Collection.Add([PSCustomObject]@{
+        'Asset Tag'         = $Item.Custom.'Asset Tag'
         Hostname            = $Item.Hostname
         Device              = $Item.Device
         Type                = $Item.Type
@@ -42,6 +43,7 @@ foreach ($Item in $Content) {
         'Reimaged Date'     = $Item.Reimaged
         'Excel Age Formula' = $Item.ExcelAge
         Antivirus           = $Item.AntiVirusProduct
+        Custom              = $Item.Custom
     })
 }
 

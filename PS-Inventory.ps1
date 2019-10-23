@@ -28,13 +28,12 @@ https://github.com/matthewfabrizio
 # Prints help information.
 [CmdletBinding()] param (
     [Parameter()]
-    [switch]
-    $Help,
+    [switch] $Help,
     # Hosts storage
     [Alias('Path')]
-    [ValidateScript({if ($PSItem){ Test-Path $PSItem}})]
-    [string]
-    $FilePath = "$PSScriptRoot"
+    # [ValidateScript({if ($_){  Test-Path $_}})]
+    [ValidateNotNullOrEmpty()]
+    [string] $FilePath = "$PSScriptRoot"
 )
 
 # UNC paths are meh right now
@@ -133,6 +132,11 @@ function Get-DeviceInfo() {
             $Domain       = $Win32_ComputerSystem.Domain
             $EthMAC       = ($Win32_NetworkAdapter | Where-Object {$_.NetConnectionID -like '*Ethernet*'}).MACAddress
             $WlpMAC       = ($Win32_NetworkAdapter | Where-Object {$_.NetConnectionID -like '*Wi-Fi*'}).MACAddress
+            # crappy way to test UNC path
+            if (Test-Path $("filesystem::\\$computer\c$\")) { $FPShare = "Enabled" }
+            else { $FPShare = "Disabled" }
+            # WinRM; massive slowdown
+            if ([bool](Test-WSMan -ErrorAction SilentlyContinue)) { $WinRM = "Enabled"} else { $WinRM = "Disabled" }
 
             switch($OS){
                 '10.0.10240' {$OS="1507"}
@@ -156,12 +160,8 @@ function Get-DeviceInfo() {
                 Default { "Unknown" }
             }
 
-            if ($AV.Count -gt 1) {
-                $AntivirusProduct = $AV | Where-Object -FilterScript {$PSItem -ne 'Windows Defender'}
-            }
-            else {
-                $AntivirusProduct = $AV
-            }
+            if ($AV.Count -gt 1) { $AntivirusProduct = $AV | Where-Object -FilterScript {$PSItem -ne 'Windows Defender'} }
+            else { $AntivirusProduct = $AV }
 
             # Calculate age and reimage date
             $Age = (New-TimeSpan -Start ($Age.ConvertToDateTime($Age.ReleaseDate).ToShortDateString()) -End $(Get-Date)).Days / 365
@@ -189,6 +189,8 @@ function Get-DeviceInfo() {
                 Age              = $CalculatedAge
                 Reimaged         = $ReimageDate
                 ExcelAge         = $ExcelAge
+                FPShare          = $FPShare
+                WinRM            = $WinRM
             }
 
             # Add MAC if exists to object
@@ -206,7 +208,7 @@ function Get-DeviceInfo() {
             # Store computer info in DeviceArray, append additional devices
             [Void]$DeviceArray.Add($Properties)
 
-            $Hosts   = (Get-ChildItem -Path "$FilePath").FullName
+            $Hosts = (Get-ChildItem -Path "$FilePath").FullName
             Write-Verbose -Message "Variable [Hosts] set to $Hosts"
             if ($Hosts.Count -gt 0) {
                 $HostsCheck = Get-Content -Path $Hosts -Raw | ConvertFrom-Json
@@ -254,10 +256,11 @@ function Get-DeviceInfo() {
 if ($Help) { Get-Help; exit }
 
 <# If there is no Hosts directory to store JSON, create it #>
-$FilePath = $FilePath + "\Hosts"
+$FilePath = Join-Path -Path $FilePath -ChildPath "\Hosts"
+Write-Verbose -Message "Variable [FilePath] set to $FilePath"
 
-if (!(Test-Path -Path "$FilePath")) {
-    New-Item -Path "$FilePath" -Name "Hosts" -ItemType Container > $null
+if (!(Test-Path -Path $FilePath)) {
+    New-Item -Path "$FilePath" -ItemType Container > $null
 }
 
 
