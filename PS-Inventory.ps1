@@ -28,6 +28,12 @@ https://github.com/matthewfabrizio
 # Prints help information.
 [CmdletBinding()] param ( [Parameter()] [switch] $Help )
 
+<#
+    USER CONFIGURATION VARIABLES
+    Ex: $DeviceOUs = 'OU1', 'OU2', ... 'OUn'
+#>
+$DeviceOUs = 'OU1', 'OU2'
+
 function Get-Help() {
     Clear-Host
 
@@ -35,23 +41,25 @@ function Get-Help() {
     Welcome to PS-Inventory!
 
     AD Query Scan:
-        The AD Query menu option allows a user to scan any number of devices starting with a certain string of text.
+        The AD Query menu option allows a user to scan any number of devices starting with a certain string of text based on caret (^) anchor.
         For instance, say you want to scan all computers starting with a specific name of 'LAB-' and there are 20 computers ranging from LAB-01 to LAB-20
         The scan will ping all computers starting with that name and return the results, as well as, output all info to respective JSON files.
 
-    Single and Loop Scan are pretty self explanatory; only requiring a hostname to be entered.
+    OU Query Scan:
+        The OU Query menu option allows a user to scan any number of devices in a specific OU.
+        Because of how different/complex AD environments can be, there needs to be an easy way to include what you want.
+        The best method was to add a DeviceOUs variable to the user configuration (can find it above the Get-Help function)
+        Make a list of what OUs contain your devices, select OU Query, and the script will handle the rest.
 
-    Error Logging:
-        If the script runs into an error, the information will be logged to a directory called Log in $PSScriptRoot
-        This will contain information specific to what line of code actually failed.
+    Single and Loop Scan are pretty self explanatory; only requiring a hostname to be entered.
 
     Excel Formatting:
         This script automatically copies all scanned devices to the clipboard in tab delimited format.
         This allows for simple pasting into Excel.
 
     Device Type:
-        The device type is generated based on device name. The script is catered towards Dell devices and if anything isn't an Optiplex, it's deemed a laptop.
-        It's not hard to change and other desktop models can be added if you really want, but overall it's sort of useless.
+        Device type used to be very Dell specific, but now because of Win32_SystemEnclosure we can make smart decisions!
+        I have no idea why I put this into the help section to begin with \_($(0x30C4|%{[char]$_}))_/
     "
 }
 
@@ -60,6 +68,7 @@ function Show-Menu {
 
     "`n----------- MENU -----------"
     "[A] : AD Query Scan"
+    "[O] : OU Query Scan"
     "[L] : Loop Scan"
     "[S] : Single Scan"
     "[Q] : Quit"
@@ -94,63 +103,59 @@ function Get-DeviceInfo() {
         try {
             # Load relevant WMI classes
             $Win32_OperatingSystem = (Get-WmiObject -ComputerName $Computer -Class Win32_OperatingSystem -ErrorAction Stop)
-            $Win32_ComputerSystem  = (Get-WmiObject -ComputerName $Computer -Class Win32_ComputerSystem -ErrorAction Stop)
-            $Win32_Bios            = (Get-WmiObject -ComputerName $Computer -Class Win32_Bios -ErrorAction Stop)
-            $Win32_PhysicalMemory  = (Get-WmiObject -ComputerName $Computer -Class Win32_PhysicalMemory -ErrorAction Stop)
-            $Win32_NetworkAdapter  = (Get-WmiObject -ComputerName $Computer -Class Win32_NetworkAdapter | Where-Object { $_.Description -notmatch 'wan miniport|microsoft isatap adapter|bluetooth|juniper|ras async adapter|virtual|apple|miniport|tunnel|debug|advanced-n|wireless-n|ndis' } -ErrorAction Stop)
+            $Win32_ComputerSystem = (Get-WmiObject -ComputerName $Computer -Class Win32_ComputerSystem -ErrorAction Stop)
+            $Win32_Bios = (Get-WmiObject -ComputerName $Computer -Class Win32_Bios -ErrorAction Stop)
+            $Win32_PhysicalMemory = (Get-WmiObject -ComputerName $Computer -Class Win32_PhysicalMemory -ErrorAction Stop)
+            $Win32_NetworkAdapter = (Get-WmiObject -ComputerName $Computer -Class Win32_NetworkAdapter | Where-Object { $_.Description -notmatch 'wan miniport|microsoft isatap adapter|bluetooth|juniper|ras async adapter|virtual|apple|miniport|tunnel|debug|advanced-n|wireless-n|ndis' } -ErrorAction Stop)
             $AV = (Get-WmiObject -ComputerName $Computer -Namespace "root\SecurityCenter2" -Query "SELECT * FROM AntiVirusProduct").displayName
-            $Win32_SystemEnclosure = (Get-WmiObject -ClassName Win32_SystemEnclosure -Namespace 'root\CIMV2' -Property ChassisTypes).ChassisTypes
+            $Win32_SystemEnclosure = (Get-WmiObject -ComputerName $Computer -ClassName Win32_SystemEnclosure -Namespace 'root\CIMV2' -Property ChassisTypes).ChassisTypes
 
             # Manufacturer / Physical
             $Manufacturer = $Win32_ComputerSystem.Manufacturer
-            $Model        = $Win32_ComputerSystem.Model
-            $Serial       = $Win32_Bios.SerialNumber
-            $Memory       = $Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum | ForEach-Object { "{0:N2}" -f ([math]::round(($_.Sum / 1GB),2)) }
+            $Model = $Win32_ComputerSystem.Model
+            $Serial = $Win32_Bios.SerialNumber
+            $Memory = $Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum | ForEach-Object { "{0:N2}" -f ([math]::round(($_.Sum / 1GB), 2)) }
             
             # NetBIOS
-            $Hostname     = $Win32_OperatingSystem.CSName
+            $Hostname = $Win32_OperatingSystem.CSName
 
             # Operating System
-            $Edition      = $Win32_OperatingSystem.Caption
-            $OS           = $Win32_OperatingSystem.Version
+            $Edition = $Win32_OperatingSystem.Caption
+            $OS = $Win32_OperatingSystem.Version
             
             # Lifespan
-            $Age          = $Win32_Bios
-            $ReimageDate  = $Win32_OperatingSystem
+            $Age = $Win32_Bios
+            $ReimageDate = $Win32_OperatingSystem
 
             # Networking
-            $Domain       = $Win32_ComputerSystem.Domain
-            $EthMAC       = ($Win32_NetworkAdapter | Where-Object {$_.NetConnectionID -like '*Ethernet*'}).MACAddress
-            $WlpMAC       = ($Win32_NetworkAdapter | Where-Object {$_.NetConnectionID -like '*Wi-Fi*'}).MACAddress
+            $Domain = $Win32_ComputerSystem.Domain
+            $EthMAC = ($Win32_NetworkAdapter | Where-Object { $_.NetConnectionID -like '*Ethernet*' }).MACAddress
+            $WlpMAC = ($Win32_NetworkAdapter | Where-Object { $_.NetConnectionID -like '*Wi-Fi*' }).MACAddress
 
-            switch($OS){
-                '10.0.10240' {$OS="1507"}
-                '10.0.10586' {$OS="1511"}
-                '10.0.14393' {$OS="1607"}
-                '10.0.15063' {$OS="1703"}
-                '10.0.16299' {$OS="1709"}
-                '10.0.17134' {$OS="1803"}
-                '10.0.17763' {$OS="1809"}
-                '10.0.18362' {$OS="1903"}
+            switch ($OS) {
+                '10.0.10240' { $OS = "1507" }
+                '10.0.10586' { $OS = "1511" }
+                '10.0.14393' { $OS = "1607" }
+                '10.0.15063' { $OS = "1703" }
+                '10.0.16299' { $OS = "1709" }
+                '10.0.17134' { $OS = "1803" }
+                '10.0.17763' { $OS = "1809" }
+                '10.0.18362' { $OS = "1903" }
             }
 
             # Mainly for Dell devices to remove Inc.
-            $Manufacturer = [string]$Manufacturer.replace("Inc.","")
+            $Manufacturer = [string]$Manufacturer.replace("Inc.", "")
             $Make = $Manufacturer + $Model
 
             # Chassis type source values : https://docs.microsoft.com/en-us/windows/win32/cimwin32prov/win32-systemenclosure
             switch ($Win32_SystemEnclosure) {
-                { @(3..7)  -contains $PSItem } { $Type = "Desktop" }
+                { @(3..7) -contains $PSItem } { $Type = "Desktop" }
                 { @(8..16) -contains $PSItem } { $Type = "Laptop" }
                 Default { "Unknown" }
             }
 
-            if ($AV.Count -gt 1) {
-                $AntivirusProduct = $AV | Where-Object -FilterScript {$PSItem -ne 'Windows Defender'}
-            }
-            else {
-                $AntivirusProduct = $AV
-            }
+            if ($AV.Count -gt 1) { $AntivirusProduct = $AV | Where-Object -FilterScript { $PSItem -ne 'Windows Defender' } }
+            else { $AntivirusProduct = $AV }
 
             # Calculate age and reimage date
             $Age = (New-TimeSpan -Start ($Age.ConvertToDateTime($Age.ReleaseDate).ToShortDateString()) -End $(Get-Date)).Days / 365
@@ -187,7 +192,7 @@ function Get-DeviceInfo() {
             # Store computer info in DeviceArray, append additional devices
             [Void]$DeviceArray.Add($Properties)
 
-            $Hosts   = (Get-ChildItem -Path "$PSScriptRoot\Hosts").FullName
+            $Hosts = (Get-ChildItem -Path "$PSScriptRoot\Hosts").FullName
             if ($Hosts.Count -gt 0) {
                 $HostsCheck = Get-Content -Path $Hosts -Raw | ConvertFrom-Json
 
@@ -204,20 +209,20 @@ function Get-DeviceInfo() {
 
             <# Prep specific properties for Excel pasting; tab delimited #>
             ($Properties | Select-Object * | ForEach-Object {
-                $_.Device
-                $_.Type
-                $_.Hostname
-                $_.Serial
-                $_.Edition
-                $_.OS
-                $_.ExcelAge
-                $_.Reimaged
-            }) -join "`t" | Set-Clipboard -Append
+                    $_.Device
+                    $_.Type
+                    $_.Hostname
+                    $_.Serial
+                    $_.Edition
+                    $_.OS
+                    $_.ExcelAge
+                    $_.Reimaged
+                }) -join "`t" | Set-Clipboard -Append
         }
         catch [System.Exception] {
-            $ExceptionLineNumber  = $PSItem.InvocationInfo.ScriptLineNumber
+            $ExceptionLineNumber = $PSItem.InvocationInfo.ScriptLineNumber
             $ExceptionLineContent = (Get-Content (Split-Path $MyInvocation.ScriptName -Leaf) -TotalCount $ExceptionLineNumber)[-1]
-            $ExceptionMessage     = $PSItem.Exception.Message
+            $ExceptionMessage = $PSItem.Exception.Message
 
             Write-Warning -Message "[ERROR] : Device [$Computer]
             $ExceptionMessage
@@ -227,16 +232,11 @@ function Get-DeviceInfo() {
     }
     
     <# Spicy STDOUT #>
-    $DeviceArray | Format-Table -AutoSize
+    $DeviceArray | Sort-Object -Property Hostname | Format-Table -AutoSize
 }
 
 # If help, help please
 if ($Help) { Get-Help; exit }
-
-<# Remove Log directory if it exists; generate on error #>
-if (Test-Path -Path "$PSScriptRoot\Log") {
-    Remove-Item -Path "$PSScriptRoot\Log" -Recurse
-}
 
 <# If there is no Hosts directory to store JSON, create it #>
 if (!(Test-Path -Path $PSScriptRoot\Hosts)) {
@@ -249,15 +249,46 @@ do {
 
     switch ($Choice) {
         <# Prompt for AD search terms - only starting characters #>
-        'a' { 
+        'a' {
+            Write-Host "`n**Note: AD search terms comply with ^ anchor (Run $($MyInvocation.MyCommand.Name) -Help) for more info**`n" -foregroundColor Yellow
             $ADFilter = Read-Host "What computer would you like to search for?"
             $ADQuery = (Get-ADComputer -Filter "Name -like '$ADFilter*'" | Select-Object -ExpandProperty Name) -join ","
             $ADQuery = $ADQuery.Split(",").Trim(" ")
             Get-DeviceInfo -ComputerName $ADQuery
         }
+        'o' {
+            # Calculate the OUs from $DeviceOUs
+            $OUList = [System.Collections.Generic.List[psobject]]::new()
+            foreach ($OU in $DeviceOUs) { $OUList += New-Object -TypeName psobject -Property @{ OU = $OU } }
+
+            if (!$DeviceOUs) { Write-Warning -Message "You need to setup your DeviceOUs variable at the top of $($MyInvocation.MyCommand.Name)"; exit }
+
+            # modify example from https://stackoverflow.com/questions/55152044/making-a-dynamic-menu-in-powershell
+            Clear-Host
+            Write-Host "Choose an OU to scan" -ForegroundColor Yellow
+            Write-Host "**Organizational Units can be defined in the DeviceOUs variable at the top of the script**`n" -ForegroundColor Yellow
+
+            "----------- OU -----------"
+
+            foreach ($MenuItem in $OUList) { '{0} - {1}' -f ($OUList.IndexOf($MenuItem) + 1), $MenuItem.OU }
+
+            "----------------------------`n"
+
+            $ChoiceValid = $false
+            while (!$ChoiceValid) {
+                $Choice = Read-Host 'Make a selection'
+                if ($Choice -notin 1..$OUList.Count) { Write-Warning -Message ('Your choice [ {0} ] is not valid.' -f $Choice) }
+                else { $ChoiceValid = $true }
+            }
+
+            # Once access to AD test on Get-ADOrganizationUnit and pass to Get-DeviceInfo
+            # Will probably have to filter out bogus OUs
+            # Match this portion with manual OU switch on other workspace
+            'You chose {0}' -f $OUList.OU[$Choice - 1]
+        }
         <# [l|L] Prompt for a computer to scan; exit on SIGINT #>
         <# [s|S] Prompt for a computer to scan; exit once complete #>
-        { @('l','s') -contains $PSItem } {
+        { @('l', 's') -contains $PSItem } {
             $HostnameExists = $false
 
             while (!$HostnameExists) {
@@ -272,7 +303,7 @@ do {
                 Get-DeviceInfo -ComputerName $Computers
 
                 # If user selected single scan, auto set to $true
-                if ($PSItem -eq 's') { $HostnameExists=$true }
+                if ($PSItem -eq 's') { $HostnameExists = $true }
             }
         }
         'q' { Clear-Host; exit }
