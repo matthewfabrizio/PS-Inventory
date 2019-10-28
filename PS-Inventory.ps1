@@ -33,6 +33,7 @@ https://github.com/matthewfabrizio
     Ex: $DeviceOUs = 'OU1', 'OU2', ... 'OUn'
 #>
 $DeviceOUs = 'OU1', 'OU2'
+$DomainDN = (Get-ADDomain).DistinguishedName
 
 function Get-Help() {
     Clear-Host
@@ -284,7 +285,12 @@ do {
             # Once access to AD test on Get-ADOrganizationUnit and pass to Get-DeviceInfo
             # Will probably have to filter out bogus OUs
             # Match this portion with manual OU switch on other workspace
-            'You chose {0}' -f $OUList.OU[$Choice - 1]
+            $SelectedOU = $OUList.OU[$Choice - 1]
+            $SearchBase = "OU=Computers,OU=$SelectedOU,$DomainDN"
+            Read-Host "What OU do you want to scan in $SearchBase"
+            $OUQuery = (Get-ADComputer -Filter * -SearchBase $SearchBase).Name
+            $OUQuery = $OUQuery.Split(",").Trim(" ")
+            $OUQuery
         }
         <# [l|L] Prompt for a computer to scan; exit on SIGINT #>
         <# [s|S] Prompt for a computer to scan; exit once complete #>
