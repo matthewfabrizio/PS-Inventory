@@ -76,6 +76,161 @@ function Show-Menu {
     "----------------------------`n"
 }
 
+function Get-ADConfig {
+    <#
+        .SYNOPSIS
+        Converts json config data into usable powershell object
+
+        .PARAMETER Configuration
+
+        Location of the json file which hold module configuration data
+        .EXAMPLE
+
+        Get-ADConfig "C:\configs\ADConfig.json"
+
+
+    #>
+    [cmdletBinding()]
+    [Alias('Get-ADHealthConfig')]
+    Param(
+        [Parameter(Position=0)]
+        [ValidateScript({ Test-Path $_})]
+        [String]
+        $ConfigurationFile
+    )
+
+    begin {}
+
+    process {
+        $Script:Configuration = Get-Content $ConfigurationFile | ConvertFrom-JSON
+    }
+
+    end {}
+
+}
+
+function Set-PSADHealthConfig
+{
+    <#
+        .SYNOPSIS
+        Sets the configuration data for this module
+
+        .PARAMETER PSADHealthConfigPath
+
+        The filesystem location to store configuration file data.
+
+        .PARAMETER SMTPServer
+
+        The smtp server this module will use for reports.
+
+        .EXAMPLE
+        Set-PSADHealthConfig -SMTPServer email.company.com
+
+        .EXAMPLE
+        Set-PSADHealthConfig -MailFrom admonitor@foobar.come -MailTo directoryadmins@foobar.com
+
+        .EXAMPLE
+        Set-PSADHealthConfig -MaxDaysSinceBackup 12
+
+
+    #>
+
+    [cmdletBinding()]
+    Param(
+
+        [Parameter(Position=0)]
+        $HostsFile,
+
+        [Parameter()]
+        [string]
+        $Hostname,
+
+        [Parameter()]
+        [String]
+        $Device,
+
+        [Parameter()]
+        [String[]]
+        $Type,
+
+        [Parameter()]
+        [String]
+        $Serial,
+
+        [Parameter()]
+        [string]
+        $Edition,
+
+        [Parameter()]
+        [string]
+        $OS,
+
+        [Parameter()]
+        [string]
+        $Memory,
+
+        [Parameter()]
+        [string]
+        $Domain,
+
+        [Parameter()]
+        [float]
+        $DecimalAge,
+
+        [Parameter()]
+        [String]
+        $Age,
+
+        [Parameter()]
+        [String]
+        $ExcelAge
+    )
+
+    Write-Verbose -Message "Config file: $HostsFile"
+    Get-ADConfig -ConfigurationFile $HostsFile
+    # $config = Get-ADConfig -ConfigurationFile $HostsFile
+    
+    Switch($PSBoundParameters.Keys){
+        'Hostname' {
+            $Configuration.Hostname = $Hostname
+         }
+        'Device' {
+            $Configuration.Device = $Device
+        }
+        'Type' {
+            $Configuration.Type = $Type
+        }
+        'Serial' {
+            $Configuration.Serial = $Serial
+        }
+        'Edition' {
+            $Configuration.Edition = $Edition
+        }
+        'OS' {
+            $Configuration.OS = $OS
+        }
+        'Memory' {
+            $Configuration.Memory = $Memory
+        }
+        'Domain' {
+            $Configuration.Domain = $Domain
+        }
+        'DecimalAge' {
+            $Configuration.DecimalAge = $DecimalAge
+        }
+        'Age' {
+            $Configuration.Age = $Age
+        }
+        'ExcelAge' {
+            $Configuration.ExcelAge = $ExcelAge
+        }
+
+    }
+    
+    $Configuration | ConvertTo-Json | Set-Content $HostsFile
+	
+}
+
 function Get-DeviceInfo() {
     param (
         # Computer(s) to be scanned
@@ -197,12 +352,59 @@ function Get-DeviceInfo() {
             if ($Hosts.Count -gt 0) {
                 $HostsCheck = Get-Content -Path $Hosts -Raw | ConvertFrom-Json
 
+                # foreach file find a matching serial and remove the file to prevent duplicates
+                # deals with the changing of hostnames
                 foreach ($Item in $HostsCheck) {
                     if ($Properties.Serial -eq $Item.Serial) {
-                        Write-Verbose -Message "Removing duplicate entry"
-                        Remove-Item -Path "$PSScriptRoot\Hosts\$($Item.Hostname).json"
+                        Write-Verbose -Message "Renaming duplicate entry"
+                        Rename-Item -Path "$PSScriptRoot\Hosts\$($Item.Hostname).json" -NewName "$PSScriptRoot\Hosts\$Computer.json"
+                        # Remove-Item -Path "$PSScriptRoot\Hosts\$($Item.Hostname).json"
+                    }
+                    $TheFile = "$PSScriptRoot\Hosts\$Computer.json"
+
+                    if ($Properties.Hostname -ne $Item.Hostname) {
+                        Write-Verbose -Message "Changing Hostname to $($Item.Hostname) from $($Properties.Hostname)"
+                        Set-PSADHealthConfig -Hostname $Item.Hostname
+                    }
+                    if ($Properties.Device -ne $Item.Device) {
+                        Write-Verbose -Message "Changing Device to $($Item.Device) from $($Properties.Device)"
+                        Set-PSADHealthConfig -Device $Item.Device
+                    }
+                    if ($Properties.Type -ne $Item.Type) {
+                        Write-Verbose -Message "Changing Type to $($Item.Type) from $($Properties.Type)"
+                        Set-PSADHealthConfig -Type $Item.Type
+                    }
+                    if ($Properties.Edition -ne $Item.Edition) {
+                        Write-Verbose -Message "Changing Edition to $($Item.Edition) from $($Properties.Edition)"
+                        Set-PSADHealthConfig -Edition $Item.Edition
+                    }
+                    if ($Properties.OS -ne $Item.OS) {
+                        Write-Verbose -Message "Changing OS to $($Item.OS) from $($Properties.OS)"
+                        Set-PSADHealthConfig -OS $Item.OS
+                    }
+                    if ($Properties.Memory -ne $Item.Memory) {
+                        Write-Verbose -Message "Changing Memory to $($Item.Memory) from $($Properties.Memory)"
+                        Set-PSADHealthConfig -Memory $Item.Memory
+                    }
+                    if ($Properties.Domain -ne $Item.Domain) {
+                        Write-Verbose -Message "Changing Domain to $($Item.Domain) from $($Properties.Domain)"
+                        Set-PSADHealthConfig -Domain $Item.Domain
+                    }
+                    if ($Properties.DecimalAge -ne $Item.DecimalAge) {
+                        Write-Verbose -Message "Changing DecimalAge to $($Item.DecimalAge) from $($Properties.DecimalAge)"
+                        Set-PSADHealthConfig -HostsFile $TheFile -DecimalAge $Item.DecimalAge
+                    }
+                    if ($Properties.Age -ne $Item.Age) {
+                        Write-Verbose -Message "Changing Age to $($Item.Age) from $($Properties.Age)"
+                        Set-PSADHealthConfig -Age $Item.Age
+                    }
+                    if ($Properties.ExcelAge -ne $Item.ExcelAge) {
+                        Write-Verbose -Message "Changing ExcelAge to $($Item.ExcelAge) from $($Properties.ExcelAge)"
+                        Set-PSADHealthConfig -ExcelAge $Item.ExcelAge
                     }
                 }
+
+                exit
             }
             
 
