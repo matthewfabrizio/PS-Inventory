@@ -29,6 +29,7 @@ $Collection = [System.Collections.Generic.List[psobject]]::new()
 
 foreach ($Item in $Content) {
     $Collection.Add([PSCustomObject]@{
+        Asset               = $Item.Asset
         Hostname            = $Item.Hostname
         Device              = $Item.Device
         Type                = $Item.Type
@@ -37,10 +38,10 @@ foreach ($Item in $Content) {
         'Windows Build'     = $Item.OS
         Memory              = $Item.Memory
         Domain              = $Item.Domain
-        'Decimal Age'       = $Item.DecimalAge
-        Age                 = $Item.Age
+        Age                 = $Item.'Warranty Date'
+        'Decimal Age'       = $Item.'Decimal Age'
         'Reimaged Date'     = $Item.Reimaged
-        'Excel Age Formula' = $Item.ExcelAge
+        # 'Excel Age Formula' = $Item.ExcelAge
         Antivirus           = $Item.AntiVirusProduct
     })
 }

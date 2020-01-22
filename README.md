@@ -33,7 +33,7 @@ Get-WindowsCapability -Name RSAT* -Online | Add-WindowsCapability -Online
 
 To start, run `.\PS-Inventory.ps1`. The text based menu will help you with the rest.
 
-Once you have at least one computer scanned, run the `Build-Report.ps1` script. This will generate a report called `report.html` in the script root and will open automatically once finished. You can send this report to whoever via one single file!
+Once you have at least one computer scanned, run the `Build-Report.ps1` script. This will generate a report called `report.html` in the script root and will open automatically once finished. You can send this report to whoever via one single file.
 
 If you want to modify the report builder, open the file and change a few configuration variables at the top (mainly for colors and ignoring some warnings).
 
@@ -48,7 +48,7 @@ The `Help` parameter will get you started on how the script behaves.
 
 ## Future Implementations
 
-- [ ] Scan all computers in a specified OU
+- [x] Scan all computers in a specified OU
 - [ ] Add report building into main script with parameter
 
 ## Resources
