@@ -4,6 +4,7 @@ Fetch computer information.
 
 .DESCRIPTION
 Fetch computer information and output to respective JSON file.
+Build a report using PSWriteHTML
 
 .PARAMETER Help
 Prints help information.
@@ -42,7 +43,7 @@ function Get-Help() {
     Welcome to PS-Inventory!
 
     AD Query Scan:
-        The AD Query menu option allows a user to scan any number of devices starting with a certain string of text based on caret (^) anchor.
+        The AD Query menu option allows a user to scan any number of devices starting with a certain string of text based on the regex (^) anchor.
         For instance, say you want to scan all computers starting with a specific name of 'LAB-' and there are 20 computers ranging from LAB-01 to LAB-20
         The scan will ping all computers starting with that name and return the results, as well as, output all info to respective JSON files.
 
@@ -68,167 +69,12 @@ function Show-Menu {
     Clear-Host
 
     "`n----------- MENU -----------"
-    "[A] : AD Query Scan"
-    "[O] : OU Query Scan"
-    "[L] : Loop Scan"
-    "[S] : Single Scan"
+    "[1] : AD Query Scan"
+    "[2] : OU Query Scan"
+    "[3] : Loop Scan"
+    "[4] : Single Scan"
     "[Q] : Quit"
     "----------------------------`n"
-}
-
-function Get-ADConfig {
-    <#
-        .SYNOPSIS
-        Converts json config data into usable powershell object
-
-        .PARAMETER Configuration
-
-        Location of the json file which hold module configuration data
-        .EXAMPLE
-
-        Get-ADConfig "C:\configs\ADConfig.json"
-
-
-    #>
-    [cmdletBinding()]
-    [Alias('Get-ADHealthConfig')]
-    Param(
-        [Parameter(Position=0)]
-        [ValidateScript({ Test-Path $_})]
-        [String]
-        $ConfigurationFile
-    )
-
-    begin {}
-
-    process {
-        $Script:Configuration = Get-Content $ConfigurationFile | ConvertFrom-JSON
-    }
-
-    end {}
-
-}
-
-function Set-PSADHealthConfig
-{
-    <#
-        .SYNOPSIS
-        Sets the configuration data for this module
-
-        .PARAMETER PSADHealthConfigPath
-
-        The filesystem location to store configuration file data.
-
-        .PARAMETER SMTPServer
-
-        The smtp server this module will use for reports.
-
-        .EXAMPLE
-        Set-PSADHealthConfig -SMTPServer email.company.com
-
-        .EXAMPLE
-        Set-PSADHealthConfig -MailFrom admonitor@foobar.come -MailTo directoryadmins@foobar.com
-
-        .EXAMPLE
-        Set-PSADHealthConfig -MaxDaysSinceBackup 12
-
-
-    #>
-
-    [cmdletBinding()]
-    Param(
-
-        [Parameter(Position=0)]
-        $HostsFile,
-
-        [Parameter()]
-        [string]
-        $Hostname,
-
-        [Parameter()]
-        [String]
-        $Device,
-
-        [Parameter()]
-        [String[]]
-        $Type,
-
-        [Parameter()]
-        [String]
-        $Serial,
-
-        [Parameter()]
-        [string]
-        $Edition,
-
-        [Parameter()]
-        [string]
-        $OS,
-
-        [Parameter()]
-        [string]
-        $Memory,
-
-        [Parameter()]
-        [string]
-        $Domain,
-
-        [Parameter()]
-        [float]
-        $DecimalAge,
-
-        [Parameter()]
-        [String]
-        $Age,
-
-        [Parameter()]
-        [String]
-        $ExcelAge
-    )
-
-    Write-Verbose -Message "Config file: $HostsFile"
-    Get-ADConfig -ConfigurationFile $HostsFile
-    # $config = Get-ADConfig -ConfigurationFile $HostsFile
-    
-    Switch($PSBoundParameters.Keys){
-        'Hostname' {
-            $Configuration.Hostname = $Hostname
-         }
-        'Device' {
-            $Configuration.Device = $Device
-        }
-        'Type' {
-            $Configuration.Type = $Type
-        }
-        'Serial' {
-            $Configuration.Serial = $Serial
-        }
-        'Edition' {
-            $Configuration.Edition = $Edition
-        }
-        'OS' {
-            $Configuration.OS = $OS
-        }
-        'Memory' {
-            $Configuration.Memory = $Memory
-        }
-        'Domain' {
-            $Configuration.Domain = $Domain
-        }
-        'DecimalAge' {
-            $Configuration.DecimalAge = $DecimalAge
-        }
-        'Age' {
-            $Configuration.Age = $Age
-        }
-        'ExcelAge' {
-            $Configuration.ExcelAge = $ExcelAge
-        }
-
-    }
-    
-    $Configuration | ConvertTo-Json | Set-Content $HostsFile
-	
 }
 
 function Get-DeviceInfo() {
@@ -280,7 +126,6 @@ function Get-DeviceInfo() {
             $OS = $Win32_OperatingSystem.Version
             
             # Lifespan
-            $Age = $Win32_Bios
             $ReimageDate = $Win32_OperatingSystem
 
             # Networking
@@ -297,6 +142,7 @@ function Get-DeviceInfo() {
                 '10.0.17134' { $OS = "1803" }
                 '10.0.17763' { $OS = "1809" }
                 '10.0.18362' { $OS = "1903" }
+                '10.0.18363' { $OS = "1909" }
             }
 
             # Mainly for Dell devices to remove Inc.
@@ -314,18 +160,10 @@ function Get-DeviceInfo() {
             else { $AntivirusProduct = $AV }
 
             # Calculate age and reimage date
-            $Age = (New-TimeSpan -Start ($Age.ConvertToDateTime($Age.ReleaseDate).ToShortDateString()) -End $(Get-Date)).Days / 365
             $ReimageDate = ($ReimageDate.ConvertToDateTime($ReimageDate.InstallDate).ToString("MM/dd/yyyy"))
 
-            <# Calculate Decimal Age to Date #>
-            $CalculatedAge = ($Age * 365.25)
-            $CalculatedAge = (Get-Date).AddDays(-$CalculatedAge).ToString("MM/dd/yyyy")
-
-            # Calculate Excel formula based off TODAYs date
-            $ExcelAge = "=ROUND(YEARFRAC(`"$CalculatedAge`", TODAY()), 2)"
-
             # Big ol object dump
-            $Properties = [PSCustomObject]@{
+            $CurrentScanProperties = [PSCustomObject]@{
                 AntiVirusProduct = $AntivirusProduct
                 Hostname         = $Hostname
                 Device           = $Make
@@ -335,92 +173,69 @@ function Get-DeviceInfo() {
                 OS               = $OS
                 Memory           = $Memory
                 Domain           = $Domain
-                DecimalAge       = $Age
-                Age              = $CalculatedAge
                 Reimaged         = $ReimageDate
-                ExcelAge         = $ExcelAge
             }
 
             # Add MAC if exists to object
-            if ($EthMAC) { $Properties | Add-Member -NotePropertyName EthMAC -NotePropertyValue $EthMAC }
-            if ($WlpMAC) { $Properties | Add-Member -NotePropertyName WlpMAC -NotePropertyValue $WlpMAC }
+            if ($EthMAC) { $CurrentScanProperties | Add-Member -NotePropertyName EthMAC -NotePropertyValue $EthMAC }
+            if ($WlpMAC) { $CurrentScanProperties | Add-Member -NotePropertyName WlpMAC -NotePropertyValue $WlpMAC }
 
             # Store computer info in DeviceArray, append additional devices
-            [Void]$DeviceArray.Add($Properties)
+            [Void]$DeviceArray.Add($CurrentScanProperties)
 
             $Hosts = (Get-ChildItem -Path "$PSScriptRoot\Hosts").FullName
             if ($Hosts.Count -gt 0) {
-                $HostsCheck = Get-Content -Path $Hosts -Raw | ConvertFrom-Json
+                $HostsContent =  Get-Content -Path $Hosts -Raw | ConvertFrom-Json
 
-                # foreach file find a matching serial and remove the file to prevent duplicates
-                # deals with the changing of hostnames
-                foreach ($Item in $HostsCheck) {
-                    if ($Properties.Serial -eq $Item.Serial) {
+                foreach ($StoredProperty in $HostsContent) {
+                    #region static values
+                    if (!($null -eq $StoredProperty.Asset)) { $Asset = $StoredProperty.Asset }
+                    if (!($null -eq $StoredProperty.'Warranty Date')) { $Warranty = $StoredProperty.'Warranty Date' }
+                    #endregion static values
+                    
+                    #region rename changed hostname file
+                    # if the current scanned serial is equal to what is stored in the iterated file, rename it to the scanned hostname
+                    if ($CurrentScanProperties.Serial -eq $StoredProperty.Serial) {
                         Write-Verbose -Message "Renaming duplicate entry"
-                        Rename-Item -Path "$PSScriptRoot\Hosts\$($Item.Hostname).json" -NewName "$PSScriptRoot\Hosts\$Computer.json"
-                        # Remove-Item -Path "$PSScriptRoot\Hosts\$($Item.Hostname).json"
+                        Rename-Item -Path "$PSScriptRoot\Hosts\$($StoredProperty.Hostname).json" -NewName "$PSScriptRoot\Hosts\$Computer.json"
                     }
-                    $TheFile = "$PSScriptRoot\Hosts\$Computer.json"
-
-                    if ($Properties.Hostname -ne $Item.Hostname) {
-                        Write-Verbose -Message "Changing Hostname to $($Item.Hostname) from $($Properties.Hostname)"
-                        Set-PSADHealthConfig -Hostname $Item.Hostname
-                    }
-                    if ($Properties.Device -ne $Item.Device) {
-                        Write-Verbose -Message "Changing Device to $($Item.Device) from $($Properties.Device)"
-                        Set-PSADHealthConfig -Device $Item.Device
-                    }
-                    if ($Properties.Type -ne $Item.Type) {
-                        Write-Verbose -Message "Changing Type to $($Item.Type) from $($Properties.Type)"
-                        Set-PSADHealthConfig -Type $Item.Type
-                    }
-                    if ($Properties.Edition -ne $Item.Edition) {
-                        Write-Verbose -Message "Changing Edition to $($Item.Edition) from $($Properties.Edition)"
-                        Set-PSADHealthConfig -Edition $Item.Edition
-                    }
-                    if ($Properties.OS -ne $Item.OS) {
-                        Write-Verbose -Message "Changing OS to $($Item.OS) from $($Properties.OS)"
-                        Set-PSADHealthConfig -OS $Item.OS
-                    }
-                    if ($Properties.Memory -ne $Item.Memory) {
-                        Write-Verbose -Message "Changing Memory to $($Item.Memory) from $($Properties.Memory)"
-                        Set-PSADHealthConfig -Memory $Item.Memory
-                    }
-                    if ($Properties.Domain -ne $Item.Domain) {
-                        Write-Verbose -Message "Changing Domain to $($Item.Domain) from $($Properties.Domain)"
-                        Set-PSADHealthConfig -Domain $Item.Domain
-                    }
-                    if ($Properties.DecimalAge -ne $Item.DecimalAge) {
-                        Write-Verbose -Message "Changing DecimalAge to $($Item.DecimalAge) from $($Properties.DecimalAge)"
-                        Set-PSADHealthConfig -HostsFile $TheFile -DecimalAge $Item.DecimalAge
-                    }
-                    if ($Properties.Age -ne $Item.Age) {
-                        Write-Verbose -Message "Changing Age to $($Item.Age) from $($Properties.Age)"
-                        Set-PSADHealthConfig -Age $Item.Age
-                    }
-                    if ($Properties.ExcelAge -ne $Item.ExcelAge) {
-                        Write-Verbose -Message "Changing ExcelAge to $($Item.ExcelAge) from $($Properties.ExcelAge)"
-                        Set-PSADHealthConfig -ExcelAge $Item.ExcelAge
-                    }
+                    #endregion rename changed hostname file
                 }
-
-                exit
             }
             
+            #region set static data
+            if ($Asset) { $CurrentScanProperties | Add-Member -NotePropertyName Asset -NotePropertyValue $Asset }
+            else { $CurrentScanProperties | Add-Member -NotePropertyName Asset -NotePropertyValue "" }
 
-            $Properties | ConvertTo-Json | Out-File "$PSScriptRoot\Hosts\$Computer.json"
+            if ($Warranty) { $CurrentScanProperties | Add-Member -NotePropertyName 'Warranty Date' -NotePropertyValue $Warranty }
+            else { $CurrentScanProperties | Add-Member -NotePropertyName 'Warranty Date' -NotePropertyValue "" }
+            #endregion set static data
 
-            <# Prep specific properties for Excel pasting; tab delimited #>
-            ($Properties | Select-Object * | ForEach-Object {
-                    $_.Device
-                    $_.Type
-                    $_.Hostname
-                    $_.Serial
-                    $_.Edition
-                    $_.OS
-                    $_.ExcelAge
-                    $_.Reimaged
-                }) -join "`t" | Set-Clipboard -Append
+            # prep warranty decimal age for boomers
+            if ($Warranty) {
+                $WarrantyDatetime = [datetime]$Warranty
+
+                $DecimalAge = (New-TimeSpan -Start $WarrantyDatetime -End $(Get-Date)).Days / 365
+                $ExcelAge = "=ROUND(YEARFRAC(`"$Warranty`", TODAY()), 2)"
+
+                $CurrentScanProperties | Add-Member -NotePropertyName 'Decimal Age' -NotePropertyValue $DecimalAge
+                $CurrentScanProperties | Add-Member -NotePropertyName 'ExcelAge' -NotePropertyValue $ExcelAge
+            }
+
+            # dump all changes into respective JSON file
+            $CurrentScanProperties | ConvertTo-Json | Out-File "$PSScriptRoot\Hosts\$Computer.json"
+
+            <# Prep specific CurrentScanProperties for Excel pasting; tab delimited #>
+            ($CurrentScanProperties | Select-Object * | ForEach-Object {
+                    $PSItem.Device
+                    $PSItem.Type
+                    $PSItem.Hostname
+                    $PSItem.Serial
+                    $PSItem.Edition
+                    $PSItem.OS
+                    $ExcelAge
+                    $PSItem.Reimaged
+            }) -join "`t" | Set-Clipboard -Append
         }
         catch [System.Exception] {
             $ExceptionLineNumber = $PSItem.InvocationInfo.ScriptLineNumber
@@ -442,24 +257,24 @@ function Get-DeviceInfo() {
 if ($Help) { Get-Help; exit }
 
 <# If there is no Hosts directory to store JSON, create it #>
-if (!(Test-Path -Path $PSScriptRoot\Hosts)) {
-    New-Item -Path $PSScriptRoot -Name "Hosts" -ItemType Container > $null
-}
+if (!(Test-Path -Path $PSScriptRoot\Hosts)) { New-Item -Path $PSScriptRoot -Name "Hosts" -ItemType Container > $null }
 
 do {
     Show-Menu
-    $Choice = Read-Host "Make a selection"
+    $Choice = Read-Host "Choice"
 
     switch ($Choice) {
         <# Prompt for AD search terms - only starting characters #>
-        'a' {
+        '1' {
             Write-Host "`n**Note: AD search terms comply with ^ anchor (Run $($MyInvocation.MyCommand.Name) -Help) for more info**`n" -foregroundColor Yellow
             $ADFilter = Read-Host "What computer would you like to search for?"
             $ADQuery = (Get-ADComputer -Filter "Name -like '$ADFilter*'" | Select-Object -ExpandProperty Name) -join ","
             $ADQuery = $ADQuery.Split(",").Trim(" ")
             Get-DeviceInfo -ComputerName $ADQuery
         }
-        'o' {
+        '2' {
+            # TODO update OU scan with new model
+
             # Calculate the OUs from $DeviceOUs
             $OUList = [System.Collections.Generic.List[psobject]]::new()
             foreach ($OU in $DeviceOUs) { $OUList += New-Object -TypeName psobject -Property @{ OU = $OU } }
@@ -484,9 +299,6 @@ do {
                 else { $ChoiceValid = $true }
             }
 
-            # Once access to AD test on Get-ADOrganizationUnit and pass to Get-DeviceInfo
-            # Will probably have to filter out bogus OUs
-            # Match this portion with manual OU switch on other workspace
             $SelectedOU = $OUList.OU[$Choice - 1]
             $SearchBase = "OU=Computers,OU=$SelectedOU,$DomainDN"
             Read-Host "What OU do you want to scan in $SearchBase"
@@ -494,9 +306,9 @@ do {
             $OUQuery = $OUQuery.Split(",").Trim(" ")
             $OUQuery
         }
-        <# [l|L] Prompt for a computer to scan; exit on SIGINT #>
-        <# [s|S] Prompt for a computer to scan; exit once complete #>
-        { @('l', 's') -contains $PSItem } {
+        <# [3] Prompt for a computer to scan; exit on SIGINT #>
+        <# [4] Prompt for a computer to scan; exit once complete #>
+        { @('3', '4') -contains $PSItem } {
             $HostnameExists = $false
 
             while (!$HostnameExists) {
@@ -511,7 +323,7 @@ do {
                 Get-DeviceInfo -ComputerName $Computers
 
                 # If user selected single scan, auto set to $true
-                if ($PSItem -eq 's') { $HostnameExists = $true }
+                if ($PSItem -eq '4') { $HostnameExists = $true }
             }
         }
         'q' { Clear-Host; exit }
