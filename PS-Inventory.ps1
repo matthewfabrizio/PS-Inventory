@@ -33,7 +33,8 @@ https://github.com/matthewfabrizio
     USER CONFIGURATION VARIABLES
     Ex: $DeviceOUs = 'OU1', 'OU2', ... 'OUn'
 #>
-$DeviceOUs = 'OU1', 'OU2'
+# TODO: add JSON config with ADDN, maybe DomainDN
+$ADDN = 'STC North', 'STC South', 'STC Migrant'
 $DomainDN = (Get-ADDomain).DistinguishedName
 
 function Get-Help() {
@@ -56,12 +57,8 @@ function Get-Help() {
     Single and Loop Scan are pretty self explanatory; only requiring a hostname to be entered.
 
     Excel Formatting:
-        This script automatically copies all scanned devices to the clipboard in tab delimited format.
-        This allows for simple pasting into Excel.
-
-    Device Type:
-        Device type used to be very Dell specific, but now because of Win32_SystemEnclosure we can make smart decisions!
-        I have no idea why I put this into the help section to begin with \_($(0x30C4|%{[char]$_}))_/
+        This script has the option to copy scanned devices to the clipboard, however it is commented out. It seems to fail when scanning
+        a bulk amount of devices (100+)
     "
 }
 
@@ -126,7 +123,7 @@ function Get-DeviceInfo() {
             $OS = $Win32_OperatingSystem.Version
             
             # Lifespan
-            $ReimageDate = $Win32_OperatingSystem
+            $FeatureUpdate = $Win32_OperatingSystem
 
             # Networking
             $Domain = $Win32_ComputerSystem.Domain
@@ -153,6 +150,7 @@ function Get-DeviceInfo() {
             switch ($Win32_SystemEnclosure) {
                 { @(3..7) -contains $PSItem } { $Type = "Desktop" }
                 { @(8..16) -contains $PSItem } { $Type = "Laptop" }
+                { @(31..32) -contains $PSItem } {$Type = "Laptop"}
                 Default { "Unknown" }
             }
 
@@ -160,20 +158,20 @@ function Get-DeviceInfo() {
             else { $AntivirusProduct = $AV }
 
             # Calculate age and reimage date
-            $ReimageDate = ($ReimageDate.ConvertToDateTime($ReimageDate.InstallDate).ToString("MM/dd/yyyy"))
+            $FeatureUpdate = ($FeatureUpdate.ConvertToDateTime($FeatureUpdate.InstallDate).ToString("MM/dd/yyyy"))
 
             # Big ol object dump
             $CurrentScanProperties = [PSCustomObject]@{
-                AntiVirusProduct = $AntivirusProduct
+                Antivirus = $AntivirusProduct
                 Hostname         = $Hostname
                 Device           = $Make
                 Type             = $Type
-                Serial           = $Serial
-                Edition          = $Edition
-                OS               = $OS
+                'Serial Number'  = $Serial
+                'Windows Edition'= $Edition
+                'Windows Build'  = $OS
                 Memory           = $Memory
                 Domain           = $Domain
-                Reimaged         = $ReimageDate
+                'Build Update'   = $FeatureUpdate
             }
 
             # Add MAC if exists to object
@@ -188,54 +186,60 @@ function Get-DeviceInfo() {
                 $HostsContent =  Get-Content -Path $Hosts -Raw | ConvertFrom-Json
 
                 foreach ($StoredProperty in $HostsContent) {
-                    #region static values
-                    if (!($null -eq $StoredProperty.Asset)) { $Asset = $StoredProperty.Asset }
-                    if (!($null -eq $StoredProperty.'Warranty Date')) { $Warranty = $StoredProperty.'Warranty Date' }
-                    #endregion static values
-                    
+                    Write-Verbose -Message "Information for $($StoredProperty.Hostname)"
+                    Write-Verbose -Message "Asset = $Asset"
+                    Write-Verbose -Message "Warranty = $Warranty`n"
+
                     #region rename changed hostname file
                     # if the current scanned serial is equal to what is stored in the iterated file, rename it to the scanned hostname
-                    if ($CurrentScanProperties.Serial -eq $StoredProperty.Serial) {
-                        Write-Verbose -Message "Renaming duplicate entry"
-                        Rename-Item -Path "$PSScriptRoot\Hosts\$($StoredProperty.Hostname).json" -NewName "$PSScriptRoot\Hosts\$Computer.json"
+                    if ($CurrentScanProperties.'Serial Number' -eq $StoredProperty.'Serial Number') {
+                        Write-Verbose -Message "Removing duplicate entry [$($StoredProperty.Hostname)]"
+                        Remove-Item -Path "$PSScriptRoot\Hosts\$($StoredProperty.Hostname).json" -Force
                     }
                     #endregion rename changed hostname file
+
+                    # If you find a matching file, retain it's asset
+                    if ($StoredProperty.Hostname -eq $CurrentScanProperties.Hostname) {
+                        if ($null -eq $StoredProperty.Location) { $Location = "" }
+                        else { $Location = $StoredProperty.Location }
+                        
+                        if ($null -eq $StoredProperty.Asset) { $Asset = "" }
+                        else { $Asset = $StoredProperty.Asset }
+                        
+                        if ($null -eq $StoredProperty.'Warranty Date') { $Warranty = "" }
+                        else { $Warranty = $StoredProperty.'Warranty Date' }
+
+                        $CurrentScanProperties | Add-Member -NotePropertyName Location -NotePropertyValue $Location -Force
+                        $CurrentScanProperties | Add-Member -NotePropertyName Asset -NotePropertyValue $Asset -Force
+                        $CurrentScanProperties | Add-Member -NotePropertyName 'Warranty Date' -NotePropertyValue $Warranty -Force
+                    }
+
+                    if (!$CurrentScanProperties.Location) { $CurrentScanProperties | Add-Member -NotePropertyName Location -NotePropertyValue "" -Force }
+                    if (!$CurrentScanProperties.Asset) { $CurrentScanProperties | Add-Member -NotePropertyName Asset -NotePropertyValue "" -Force }
+                    if (!$CurrentScanProperties.'Warranty Date') { $CurrentScanProperties | Add-Member -NotePropertyName 'Warranty Date' -NotePropertyValue "" -Force }
                 }
             }
-            
-            #region set static data
-            if ($Asset) { $CurrentScanProperties | Add-Member -NotePropertyName Asset -NotePropertyValue $Asset }
-            else { $CurrentScanProperties | Add-Member -NotePropertyName Asset -NotePropertyValue "" }
-
-            if ($Warranty) { $CurrentScanProperties | Add-Member -NotePropertyName 'Warranty Date' -NotePropertyValue $Warranty }
-            else { $CurrentScanProperties | Add-Member -NotePropertyName 'Warranty Date' -NotePropertyValue "" }
-            #endregion set static data
-
-            # prep warranty decimal age for boomers
-            if ($Warranty) {
-                $WarrantyDatetime = [datetime]$Warranty
-
-                $DecimalAge = (New-TimeSpan -Start $WarrantyDatetime -End $(Get-Date)).Days / 365
-                $ExcelAge = "=ROUND(YEARFRAC(`"$Warranty`", TODAY()), 2)"
-
-                $CurrentScanProperties | Add-Member -NotePropertyName 'Decimal Age' -NotePropertyValue $DecimalAge
-                $CurrentScanProperties | Add-Member -NotePropertyName 'ExcelAge' -NotePropertyValue $ExcelAge
+            else {
+                if (!$CurrentScanProperties.Location) { $CurrentScanProperties | Add-Member -NotePropertyName Location -NotePropertyValue "" -Force }
+                if (!$CurrentScanProperties.Asset) { $CurrentScanProperties | Add-Member -NotePropertyName Asset -NotePropertyValue "" -Force }
+                if (!$CurrentScanProperties.'Warranty Date') { $CurrentScanProperties | Add-Member -NotePropertyName 'Warranty Date' -NotePropertyValue "" -Force }
             }
 
             # dump all changes into respective JSON file
             $CurrentScanProperties | ConvertTo-Json | Out-File "$PSScriptRoot\Hosts\$Computer.json"
 
+            # This seems to break when you scan a boat load of devices
             <# Prep specific CurrentScanProperties for Excel pasting; tab delimited #>
-            ($CurrentScanProperties | Select-Object * | ForEach-Object {
-                    $PSItem.Device
-                    $PSItem.Type
-                    $PSItem.Hostname
-                    $PSItem.Serial
-                    $PSItem.Edition
-                    $PSItem.OS
-                    $ExcelAge
-                    $PSItem.Reimaged
-            }) -join "`t" | Set-Clipboard -Append
+            # ($CurrentScanProperties | Select-Object * | ForEach-Object {
+            #         $PSItem.Device
+            #         $PSItem.Type
+            #         $PSItem.Hostname
+            #         $PSItem.Serial
+            #         $PSItem.Edition
+            #         $PSItem.OS
+            #         $ExcelAge
+            #         $PSItem.Reimaged
+            # }) -join "`t" | Set-Clipboard -Append
         }
         catch [System.Exception] {
             $ExceptionLineNumber = $PSItem.InvocationInfo.ScriptLineNumber
@@ -273,38 +277,60 @@ do {
             Get-DeviceInfo -ComputerName $ADQuery
         }
         '2' {
-            # TODO update OU scan with new model
-
-            # Calculate the OUs from $DeviceOUs
+            # source : https://adamtheautomator.com/get-adcomputer-powershell/
+            # Calculate the OUs from $ADDN
             $OUList = [System.Collections.Generic.List[psobject]]::new()
-            foreach ($OU in $DeviceOUs) { $OUList += New-Object -TypeName psobject -Property @{ OU = $OU } }
-
-            if (!$DeviceOUs) { Write-Warning -Message "You need to setup your DeviceOUs variable at the top of $($MyInvocation.MyCommand.Name)"; exit }
-
+            foreach ($OU in $ADDN) { $OUList += New-Object -TypeName psobject -Property @{ OU = $OU } }
+    
+            if (!$ADDN) { Write-Warning -Message "You need to setup your ADDN variable at the top of $($MyInvocation.MyCommand.Name)"; exit }
+    
             # modify example from https://stackoverflow.com/questions/55152044/making-a-dynamic-menu-in-powershell
             Clear-Host
             Write-Host "Choose an OU to scan" -ForegroundColor Yellow
-            Write-Host "**Organizational Units can be defined in the DeviceOUs variable at the top of the script**`n" -ForegroundColor Yellow
-
-            "----------- OU -----------"
-
+            Write-Host "**Organizational Units can be defined within the ADDN variable (search for $`ADDN)**`n" -ForegroundColor Yellow
+    
+            "----------- OU -------------"
+    
             foreach ($MenuItem in $OUList) { '{0} - {1}' -f ($OUList.IndexOf($MenuItem) + 1), $MenuItem.OU }
-
+    
             "----------------------------`n"
-
+    
             $ChoiceValid = $false
             while (!$ChoiceValid) {
                 $Choice = Read-Host 'Make a selection'
                 if ($Choice -notin 1..$OUList.Count) { Write-Warning -Message ('Your choice [ {0} ] is not valid.' -f $Choice) }
                 else { $ChoiceValid = $true }
             }
-
-            $SelectedOU = $OUList.OU[$Choice - 1]
+    
+            $Script:SelectedOU = $OUList.OU[$Choice - 1]
+    
             $SearchBase = "OU=Computers,OU=$SelectedOU,$DomainDN"
-            Read-Host "What OU do you want to scan in $SearchBase"
-            $OUQuery = (Get-ADComputer -Filter * -SearchBase $SearchBase).Name
+            $SearchOU = Read-Host "What OU do you want to scan in $SearchBase ( Enter[All] | list )"
+
+            if ($SearchOU -match 'list') {
+                "`n"
+                (Get-ADOrganizationalUnit -LDAPFilter '(name=*)' -SearchBase "$SearchBase" -SearchScope Subtree).Name; "`n"
+                $SearchOU = Read-Host "What OU do you want to scan in $SearchBase ( Enter[All] )"
+                if ($SearchOU -match 'list') { "`n`n`nwhy john, why..`n"; exit }
+            }
+
+            if ($null -eq $SearchOU) {
+                Write-Host "
+                If you plan on doing something like this then god bless. I don't recommend.
+                If you want this script to run on all computers under $SearchBase then type it yourself.
+                " -ForegroundColor Yellow
+                exit
+                # $SearchBase = $SearchBase
+            }
+            else {
+                $SearchBase = (Get-ADOrganizationalUnit -Filter "Name -like '$SearchOU'" -SearchBase "OU=Computers,OU=$SelectedOU,DC=stcenters,DC=org").DistinguishedName
+            }
+
+            Write-Verbose "SearchBase = $SearchBase"
+            
+            $OUQuery = (Get-ADComputer -Filter * -SearchBase $SearchBase -SearchScope Subtree).Name
             $OUQuery = $OUQuery.Split(",").Trim(" ")
-            $OUQuery
+            Get-DeviceInfo -ComputerName ($OUQuery | Sort-Object)
         }
         <# [3] Prompt for a computer to scan; exit on SIGINT #>
         <# [4] Prompt for a computer to scan; exit once complete #>
