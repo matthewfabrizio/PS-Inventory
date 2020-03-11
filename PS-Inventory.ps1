@@ -34,7 +34,7 @@ https://github.com/matthewfabrizio
     Ex: $DeviceOUs = 'OU1', 'OU2', ... 'OUn'
 #>
 # TODO: add JSON config with ADDN, maybe DomainDN
-$ADDN = 'STC North', 'STC South', 'STC Migrant'
+$ADDN = 'OU1', 'OU2', 'OU3'
 $DomainDN = (Get-ADDomain).DistinguishedName
 
 function Get-Help() {
@@ -323,7 +323,7 @@ do {
                 # $SearchBase = $SearchBase
             }
             else {
-                $SearchBase = (Get-ADOrganizationalUnit -Filter "Name -like '$SearchOU'" -SearchBase "OU=Computers,OU=$SelectedOU,DC=stcenters,DC=org").DistinguishedName
+                $SearchBase = (Get-ADOrganizationalUnit -Filter "Name -like '$SearchOU'" -SearchBase "OU=Computers,OU=$SelectedOU,DC=domain,DC=org").DistinguishedName
             }
 
             Write-Verbose "SearchBase = $SearchBase"
