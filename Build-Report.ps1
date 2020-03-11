@@ -7,7 +7,7 @@ $MaximumAge     = 5.9  # Maximum age before conditional formatting is applied
 $UnsupportedOS  = 'Microsoft Windows 7 Professional' # Problem OS to conditionally format
 
 # Domain applies to $DomainWarning, also possible to use (Get-ADDomain).Forest
-$Domain         = 'stcenters.org'
+$Domain         = 'domain.org'
 
 # If you don't want any warnings on the Devices tab, set values to $false
 $MinimumOSBuildWarning  = $true  # Will warn if any devices are running builds lower than $MinimumOSBuild (above)
